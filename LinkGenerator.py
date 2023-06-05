@@ -14,7 +14,7 @@ def get_link(update: Update, context: CallbackContext):
     try:
         limit = int(context.args[0])
     except (IndexError, ValueError):
-        update.message.reply_text("Usage: /get link <number_of_uses>")
+        update.message.reply_text("Usage: /getlink <number_of_uses>")
         return
 
     if limit < 1:
@@ -31,6 +31,6 @@ def get_link(update: Update, context: CallbackContext):
 
 
 dispatcher = updater.dispatcher
-dispatcher.add_handler(CommandHandler("get", get_link, pass_args=True))
+dispatcher.add_handler(CommandHandler("getlink", get_link, pass_args=True))
 updater.start_polling()
 updater.idle()
