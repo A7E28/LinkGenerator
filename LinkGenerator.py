@@ -47,8 +47,12 @@ def revoke_link(update: Update, context: CallbackContext):
         update.message.reply_text("An error occurred while revoking the invite link.")
         logging.error(e)
 
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("Hey there! I'm alive:) This is link generator V1.0.17")
+
 dispatcher = updater.dispatcher
 dispatcher.add_handler(CommandHandler("getlink", get_link, pass_args=True, filters=Filters.chat_type.groups))
 dispatcher.add_handler(CommandHandler("revoke", revoke_link, filters=Filters.chat_type.groups))
+dispatcher.add_handler(CommandHandler("start", start))
 updater.start_polling()
 updater.idle()
