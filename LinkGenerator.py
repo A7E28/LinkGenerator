@@ -49,46 +49,6 @@ def revoke_link(update: Update, context: CallbackContext):
         update.message.reply_text("An error occurred while revoking the invite link.")
         logging.error(e)
 
-def kick(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-    if not context.bot.get_chat_member(chat_id, user_id).status in ['administrator', 'creator']:
-        update.message.reply_text("Only admins can use this command.")
-        return
-
-    if not update.message.reply_to_message:
-        update.message.reply_text("Please reply to a user's message to kick them.")
-        return
-
-    user_id = update.message.reply_to_message.from_user.id
-    context.bot.kick_chat_member(chat_id, user_id)
-    update.message.reply_text(f"{user_id} has been kicked from the group.")
-
-def ban(update: Update, context: CallbackContext):
-    chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-    if not context.bot.get_chat_member(chat_id, user_id).status in ['administrator', 'creator']:
-        update.message.reply_text("Only admins can use this command.")
-        return
-
-    if not update.message.reply_to_message:
-        update.message.reply_text("Please reply to a user's message to ban them.")
-        return
-
-    user_id = update.message.reply_to_message.from_user.id
-    context.bot.ban_chat_member(chat_id, user_id)
-    update.message.reply_text(f"{user_id} has been banned from the group.")
-
-def info(update: Update, context: CallbackContext):
-    if not update.message.reply_to_message:
-        update.message.reply_text("Please reply to a user's message to get their info.")
-        return
-
-    user = update.message.reply_to_message.from_user
-    user_id = user.id
-    username = user.username or "N/A"
-    is_bot = user.is_bot
-    update.message.reply_text(f"User ID: {user_id}\nUsername: {username}\nIs Bot: {is_bot}")
 
 def start(update: Update, context: CallbackContext):
     update.message.reply_text(f"Hey there, I'm alive! This is Link Generator {VERSION}")
@@ -96,9 +56,6 @@ def start(update: Update, context: CallbackContext):
 dispatcher = updater.dispatcher
 dispatcher.add_handler(CommandHandler("getlink", get_link, pass_args=True, filters=Filters.chat_type.groups))
 dispatcher.add_handler(CommandHandler("revoke", revoke_link, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("kick", kick, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("ban", ban, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("info", info))
 dispatcher.add_handler(CommandHandler("start", start))
 updater.start_polling()
 updater.idle()
