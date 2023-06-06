@@ -75,7 +75,7 @@ def migrateid(update: Update, context: CallbackContext):
 
     try:
         context.bot.ban_chat_member(chat_id, user_id)
-        expire_date = datetime.utcnow() + timedelta(minutes=1)
+        expire_date = datetime.utcnow() + timedelta(minutes=5)
         invite_link = context.bot.create_chat_invite_link(chat_id, member_limit=1, expire_date=expire_date)
         context.bot.send_message(target_user_id, f"Migrate link: {invite_link.invite_link}")
     except Exception as e:
