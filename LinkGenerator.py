@@ -1,105 +1,209 @@
 import logging
-import time
+import asyncio
+import os
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import CallbackContext, CommandHandler, ApplicationBuilder, filters
 from datetime import datetime, timedelta
-from telegram import Update, ChatMember
-from telegram.ext import Updater, CommandHandler, CallbackContext, Filters
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO)
-updater = Updater("Bot_Token")
 
-VERSION = "V2.0"
+#logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.ERROR)
 
-def get_link(update: Update, context: CallbackContext):
+
+load_dotenv()
+token = os.getenv('TOKEN')
+
+
+def restricted_admin(func):
+    async def wrapper(update: Update, context: CallbackContext) -> None:
+        if update.message:
+            chat = update.message.chat
+            user_id = update.message.from_user.id
+            chat_id = update.effective_chat.id
+
+            is_admin = False
+            try:
+                member = await chat.get_member(user_id)
+                is_admin = member.status in ['creator', 'administrator']
+            except Exception as e:
+                print(f"Error retrieving member: {e}")
+
+            if user_id is not is_admin:
+                await update.message.reply_text("You need to be an admin to do this.")
+                return
+
+        asyncio.create_task(func(update, context))  # Use 'create_task' to schedule the coroutine
+    return wrapper
+
+
+
+def adduser(func):
+    async def wrapper(update: Update, context: CallbackContext) -> None:
+        chat = update.effective_chat
+        bot_id = context.bot.id
+        if update.effective_chat.type == 'private':
+            return
+        
+        is_admin = False
+        try:
+            member = await chat.get_member(bot_id)
+            is_admin = member.status in ['creator', 'administrator']
+        except Exception as e:
+            print(f"Error retrieving bot member: {e}")
+
+        if not is_admin:
+            await update.message.reply_text("I need to be an admin to perform this action.")
+            return
+        permissions = await chat.get_member(bot_id)
+        if not permissions.can_invite_users:
+            await context.bot.send_message(chat.id, "I don't have enough rights for this.\nAllow Add Users permission.")
+            return
+        asyncio.create_task(func(update, context))
+    return wrapper
+
+
+
+
+@adduser
+@restricted_admin
+async def get_link(update: Update, context: CallbackContext):
+    if update.effective_chat.type == 'private':
+        await update.message.reply_text("Please use this command in a group chat")
+        return
+    if 'invite_link' not in context.chat_data:
+        context.chat_data['invite_link'] = None
+    if 'expire_date' not in context.chat_data:
+        context.chat_data['expire_date'] = None
+
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
-    if not context.bot.get_chat_member(chat_id, user_id).status in ['administrator', 'creator']:
-        update.message.reply_text("Only admins can use this command.")
-        return
 
     try:
         limit = int(context.args[0])
         duration = int(context.args[1])
     except (IndexError, ValueError):
-        update.message.reply_text("Usage: /getlink <number_of_uses> <duration_in_minutes>")
+        await update.message.reply_text("Usage: /getlink <number_of_uses> <duration_in_minutes>")
         return
 
     if limit < 1:
-        update.message.reply_text("The number of uses should be at least 1.")
+        await update.message.reply_text("The number of uses should be at least 1.")
         return
 
     if duration < 1:
-        update.message.reply_text("The duration should be at least 1 minute.")
+        await update.message.reply_text("The duration should be at least 1 minute.")
         return
 
     try:
         expire_date = datetime.utcnow() + timedelta(minutes=duration)
-        invite_link = context.bot.create_chat_invite_link(chat_id, member_limit=limit, expire_date=expire_date)
+        invite_link = await context.bot.create_chat_invite_link(chat_id, member_limit=limit, expire_date=expire_date)
         context.chat_data['invite_link'] = invite_link.invite_link
         context.chat_data['expire_date'] = expire_date.timestamp()
-        update.message.reply_text(f"Here's your invite link: {invite_link.invite_link}")
+
+        chat = await context.bot.get_chat(chat_id)  # Await the 'get_chat' coroutine
+        group_name = chat.title
+        message = f"Here's your invite link for {group_name}: {invite_link.invite_link}"
+        message += f"\n\nLink duration: {duration} min(s) \nUser limit: {limit}"
+
+        try:
+            await context.bot.send_message(user_id, message)
+            await update.message.reply_text("Please check your PM for the invite link.")
+        except Exception as pm_error:
+            logging.error(pm_error)
+            await update.message.reply_text("Why am I not allowed for PM? Interact with me otherwise I can't send you the invite link.")
+
     except Exception as e:
-        update.message.reply_text("An error occurred while generating the invite link.")
+        await update.message.reply_text("An error occurred while generating the invite link.")
         logging.error(e)
 
-def revoke_link(update: Update, context: CallbackContext):
+
+@adduser
+@restricted_admin
+async def revoke_link(update: Update, context: CallbackContext):
+    if update.effective_chat.type == 'private':
+         await update.message.reply_text("Please use this command in a group chat")
+         return
+         
+    if 'invite_link' not in context.chat_data:
+        context.chat_data['invite_link'] = None
+    if 'expire_date' not in context.chat_data:
+        context.chat_data['expire_date'] = None
+
     chat_id = update.effective_chat.id
-    user_id = update.effective_user.id
-    if not context.bot.get_chat_member(chat_id, user_id).status in ['administrator', 'creator']:
-        update.message.reply_text("Only admins can use this command.")
-        return
 
     try:
         invite_link = context.chat_data['invite_link']
-        context.bot.revoke_chat_invite_link(chat_id, invite_link)
-        update.message.reply_text("The invite link has been revoked.")
-    except KeyError:
-        update.message.reply_text("No invite link has been generated yet.")
+        if invite_link is None:
+            await update.message.reply_text("No invite link has been generated yet.")
+        else:
+            await context.bot.revoke_chat_invite_link(chat_id, invite_link)
+            await update.message.reply_text("The invite link has been revoked.")
     except Exception as e:
-        update.message.reply_text("An error occurred while revoking the invite link.")
+        await update.message.reply_text("An error occurred while revoking the invite link.")
         logging.error(e)
 
 
-def migrateid(update: Update, context: CallbackContext):
+
+async def migrateid(update: Update, context: CallbackContext):
+    if update.effective_chat.type == 'private':
+        await update.message.reply_text("Please use this command in a group chat")
+        return
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
 
     try:
         target_user_id = int(context.args[0])
     except (IndexError, ValueError):
-        update.message.reply_text("Usage: /migrateid <user_id>")
+        await update.message.reply_text("Usage: /migrateid <user_id>")
         return
 
     if user_id == target_user_id:
-        update.message.reply_text("You cannot migrate yourself.")
+        await update.message.reply_text("You cannot migrate yourself.")
         return
 
     try:
         context.bot.ban_chat_member(chat_id, user_id)
-        expire_date = datetime.utcnow() + timedelta(minutes=5)
-        invite_link = context.bot.create_chat_invite_link(chat_id, member_limit=1, expire_date=expire_date)
-        context.bot.send_message(target_user_id, f"Migrate link: {invite_link.invite_link}")
+        expire_date = datetime.utcnow() + timedelta(minutes=1)
+        invite_link = await context.bot.create_chat_invite_link(chat_id, member_limit=1, expire_date=expire_date)
+        await context.bot.send_message(target_user_id, f"Migrate link: {invite_link.invite_link}")
     except Exception as e:
-        update.message.reply_text("An error occurred while migrating the user.")
+        await update.message.reply_text("An error occurred while migrating the user.")
         logging.error(e)
 
-def check_expired_links(context: CallbackContext):
-    for chat_id, chat_data in context.chat_data.items():
-        if 'expire_date' in chat_data and chat_data['expire_date'] <= time.time():
-            try:
-                context.bot.revoke_chat_invite_link(chat_id, chat_data['invite_link'])
-                del chat_data['invite_link']
-                del chat_data['expire_date']
-            except Exception as e:
-                logging.error(e)
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(f"Hey there, I'm alive! This is Link Generator {VERSION}")
 
-dispatcher = updater.dispatcher
-dispatcher.add_handler(CommandHandler("getlink", get_link, pass_args=True, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("revoke", revoke_link, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("migrateid", migrateid, pass_args=True, filters=Filters.chat_type.groups))
-dispatcher.add_handler(CommandHandler("start", start))
-updater.job_queue.run_repeating(check_expired_links, interval=60, first=0)
-updater.start_polling()
-updater.idle()
+
+start_text = '''Hey! My name is Link Generator. I am a assistant bot, here to help you get around and keep the order in your private groups!
+
+Join the bot support group @TheHypernovaSupport if you need any bot support or help.
+
+Follow @TheHypernovaNews if you want to keep up with the bot news, bot updates and bot downtime!
+
+
+'''
+
+
+
+async def start(update: Update, context: CallbackContext):
+    if update.effective_chat.type == 'private':
+            keyboard = [
+                [InlineKeyboardButton("Add me to your chat!", url='https://t.me/GetInviteLinkBot?startgroup=true')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=start_text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(f"Hey, I am Link Generator and I am alive.")
+
+
+
+
+bot = ApplicationBuilder().token(token).build()
+
+bot.add_handler(CommandHandler("start", start))
+
+bot.add_handler(CommandHandler("getlink", get_link, filters=filters.ALL))
+bot.add_handler(CommandHandler("revoke", revoke_link, filters=filters.ALL))
+bot.add_handler(CommandHandler("migrateid", migrateid, filters=filters.ALL))
+
+print('\n\nBOT Running...')
+bot.run_polling()
