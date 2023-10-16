@@ -1,8 +1,9 @@
 import logging
+import warnings
 import asyncio
 import os
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import CallbackContext, CommandHandler, ApplicationBuilder, filters
+from telegram.ext import CallbackContext, CommandHandler, ApplicationBuilder
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 #logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.ERROR)
 
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="telegram.ext")
 
 load_dotenv()
 token = os.getenv('TOKEN')
@@ -20,7 +22,6 @@ def restricted_admin(func):
         if update.message:
             chat = update.message.chat
             user_id = update.message.from_user.id
-            chat_id = update.effective_chat.id
 
             is_admin = False
             try:
@@ -65,8 +66,26 @@ def adduser(func):
 
 
 
+def UserCanAddUser(func):
+    async def wrapper(update: Update, context: CallbackContext) -> None:
+        chat = update.effective_chat
+        user_id = update.message.from_user.id
+        if update.effective_chat.type == 'private':
+            return
+        
+        permissions = await chat.get_member(user_id)
+        if not permissions.status == 'creator' and not permissions.can_invite_users:
+            await context.bot.send_message(chat.id, "You are missing the 'Add Users' permission to use this command.")
+            return
+        asyncio.create_task(func(update, context))
+    return wrapper
+
+
+
+
 @adduser
 @restricted_admin
+@UserCanAddUser
 async def get_link(update: Update, context: CallbackContext):
     if update.effective_chat.type == 'private':
         await update.message.reply_text("Please use this command in a group chat")
@@ -83,7 +102,7 @@ async def get_link(update: Update, context: CallbackContext):
         limit = int(context.args[0])
         duration = int(context.args[1])
     except (IndexError, ValueError):
-        await update.message.reply_text("Usage: /getlink <number_of_uses> <duration_in_minutes>")
+        await update.message.reply_text("Usage: /getlink <number_of_users> <duration_in_minutes>")
         return
 
     if limit < 1:
@@ -201,9 +220,9 @@ bot = ApplicationBuilder().token(token).build()
 
 bot.add_handler(CommandHandler("start", start))
 
-bot.add_handler(CommandHandler("getlink", get_link, filters=filters.ALL))
-bot.add_handler(CommandHandler("revoke", revoke_link, filters=filters.ALL))
-bot.add_handler(CommandHandler("migrateid", migrateid, filters=filters.ALL))
+bot.add_handler(CommandHandler("getlink", get_link))
+bot.add_handler(CommandHandler("revoke", revoke_link))
+bot.add_handler(CommandHandler("migrateid", migrateid))
 
 print('\n\nBOT Running...')
 bot.run_polling()
